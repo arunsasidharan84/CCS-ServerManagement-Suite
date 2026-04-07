@@ -21,4 +21,4 @@ This repository uses an external configuration pattern to ensure laboratory-spec
 3. Set up the configuration at `/etc/ccs/ccs.conf`.
 
 ---
-*Note: This is a private repository for CCS Lab and collaborators.*
+*Note: This is created for CCS, NIMHANS, and may be used as a template to improve upon for other Labs.*
