@@ -1,0 +1,27 @@
+# CCS Global Configuration Template
+# Instructions: Copy this to /etc/ccs/ccs.conf and update the variables for your lab.
+
+# --- Network & Infrastructure ---
+# The IP address of your primary NAS storage server.
+NAS_IP="10.11.x.x"
+
+# --- Storage Paths ---
+# Base path for local user home directories.
+USER_HOME_BASE="/serverdata/ccshome"
+
+# The three main NAS mount categories used by the recruitment/processing.
+READ_ACCESS_PATH="/NAS/readaccess"
+FULL_ACCESS_PATH="/NAS/fullaccess"
+NAS_ALL_PATH="/NAS_all"
+
+# --- Environment & Python ---
+# Path to your Miniconda/Conda installation.
+CONDA_PATH="/serverdata/miniconda3"
+
+# Path to the shared environment file (usually on the NAS).
+PYTHON_ENV_YML="/NAS_all/Common/ccs_environment.yml"
+PYTHON_REQS_TXT="/NAS_all/Common/ccs_requirements.txt"
+
+# --- Resource Limits ---
+DEFAULT_MEMORY_MAX="256G"
+DEFAULT_TASKS_MAX="14336"
