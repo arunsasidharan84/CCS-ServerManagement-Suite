@@ -62,7 +62,10 @@ system_summary() {
     local HANGS=$(ps -eo state | grep "^D" | wc -l)
     [ "$HANGS" -gt 0 ] && echo -e "${RED}!!! ALERT: $HANGS processes are stuck in I/O wait (D-state) !!!${NC}"
     echo "Memory:       $(free -h | grep Mem: | awk '{print "Used: " $3 ", Free: " $4 ", Total: " $2}')"
-    echo "Disk /:       $(df -h / | tail -n 1 | awk '{print "Used: " $3 " (" $5 "), Avail: " $4}')"
+    local disk_usage=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+    local DISK_INFO=$(df -h / | tail -n 1 | awk '{print "Used: " $3 " (" $5 "), Avail: " $4}')
+    echo "Disk /:       $DISK_INFO"
+    [ "$disk_usage" -gt 85 ] && echo -e "${RED}!!! ALERT: Disk / is critically full ($disk_usage%) !!!${NC}"
 }
 
 # ==============================================================================
@@ -186,49 +189,57 @@ ccs_full_help() {
 
     echo -e "${GREEN}[1] VNC Management (ccs vnc)${NC}"
     echo "---------------------------------------------------------------"
-    printf "  %-12s %-s\n" "info"     "Dashboard: load, memory, disk, and active sessions."
-    printf "  %-12s %-s\n" "setup"    "Interactive: Create a new VNC session for a user."
-    printf "  %-12s %-s\n" "switch"   "Switch desktop (xfce/gnome) for user or --all."
-    printf "  %-12s %-s\n" "optimize" "Apply performance tweaks to improve responsiveness."
-    printf "  %-12s %-s\n" "check"    "List sessions and optionally --cleanup dead ones."
-    printf "  %-12s %-s\n" "remove"   "Interactive: Safely remove a VNC systemd service."
+    printf "  %-16s %-s\n" "info [--cleanup]"  "List all VNC sessions; optionally remove dead/redundant ones."
+    printf "  %-16s %-s\n" "health"            "System-wide VNC diagnostic: throttling, ports, latency."
+    printf "  %-16s %-s\n" "troubleshoot [me]" "Deep diagnostics: WM, throttling, I/O, compositing."
+    printf "  %-16s %-s\n" "boost [me|user]"   "Elevate VNC CPU priority to keep UI responsive under load."
+    printf "  %-16s %-s\n" "optimize [me|all]" "Apply VNC & desktop tweaks (disables compositing, etc)."
+    printf "  %-16s %-s\n" "setup"             "Interactive: Create a new VNC session for a user."
+    printf "  %-16s %-s\n" "switch [me|user]"  "Switch desktop environment (xfce/gnome) for user or --all."
+    printf "  %-16s %-s\n" "remove"            "Interactive: Safely stop and remove a VNC systemd service."
     echo ""
 
     echo -e "${GREEN}[2] Performance & Health (ccs perf)${NC}"
     echo "---------------------------------------------------------------"
-    printf "  %-12s %-s\n" "status"   "Main Dashboard: threads, procs, GPU, and NAS health."
-    printf "  %-12s %-s\n" "top"      "Shows top 20 processes by thread count (NLWP)."
-    printf "  %-12s %-s\n" "gpu"      "Detailed NVIDIA A100 GPU diagnostics."
-    printf "  %-12s %-s\n" "noisy"    "Identify neighbors exceeding thread thresholds."
-    printf "  %-12s %-s\n" "hangs"    "Detection of processes in I/O wait (D-state)."
-    printf "  %-12s %-s\n" "cleanup"  "Interactive: Selective kill of noisy user procs."
-    printf "  %-12s %-s\n" "kill"     "Batch kill: matlab|python|servicehost|aggressive."
-    printf "  %-12s %-s\n" "limits"   "View/set system-wide TasksMax and MemoryMax."
-    printf "  %-12s %-s\n" "conda-init" "Configure current user shell for Miniconda3."
-    printf "  %-12s %-s\n" "conda-user-env" "Configure local default CCS Conda environment for user."
-    printf "  %-12s %-s\n" "spyder-hub" "Launch the centralized CCS Spyder Hub."
+    printf "  %-16s %-s\n" "status"            "Dashboard: threads, CPU/RAM per user, GPU, and NAS health."
+    printf "  %-16s %-s\n" "stabilize"         "One-shot: Apply limits + clean runaway processes."
+    printf "  %-16s %-s\n" "top"               "Top 20 processes by thread count (NLWP)."
+    printf "  %-16s %-s\n" "noisy"             "Identify processes exceeding the thread threshold."
+    printf "  %-16s %-s\n" "hangs"             "Detect processes stuck in I/O wait (D-state)."
+    printf "  %-16s %-s\n" "kill [--interactive]" "Kill by pattern (matlab|python|...) or interactively."
+    printf "  %-16s %-s\n" "limits"            "View/set system-wide CPU, Memory, and TasksMax quotas."
+    printf "  %-16s %-s\n" "gpu"               "Detailed NVIDIA GPU diagnostics."
+    printf "  %-16s %-s\n" "hw"                "Hardware health: IPMI temps, fans, PSU status."
+    printf "  %-16s %-s\n" "conda-init"        "Configure current user shell for Miniconda3."
+    printf "  %-16s %-s\n" "conda-user-env"    "Configure local default CCS Conda environment for user."
+    printf "  %-16s %-s\n" "spyder-hub"        "Launch the centralized CCS Spyder Hub."
     echo ""
 
     echo -e "${GREEN}[3] NAS Mount Management (ccs mount)${NC}"
     echo "---------------------------------------------------------------"
-    printf "  %-12s %-s\n" "setup"    "Hierarchical: Navigate NAS categories for mounting."
-    printf "  %-12s %-s\n" "remove"   "Interactive: Safely unmount and remove fstab entry."
-    printf "  %-12s %-s\n" "cleanup"  "Flatten stacked mounts and remove stale folders."
-    echo -e "  ${BLUE}Tip: Run 'sudo ccs mount cleanup --all' if Remote GUI is cluttered.${NC}"
+    printf "  %-16s %-s\n" "setup"    "Interactive: Navigate NAS categories and create a bind-mount."
+    printf "  %-16s %-s\n" "remove"   "Interactive: Safely unmount and remove an fstab entry."
+    printf "  %-16s %-s\n" "flush"    "Force-unmount all NAS bind-mounts for a user or --all."
+    printf "  %-16s %-s\n" "restore"  "Re-mount all fstab entries (runs 'mount -a')."
+    printf "  %-16s %-s\n" "cleanup"  "Deep-clean: flatten stacked mounts and remove stale folders."
+    printf "  %-16s %-s\n" "auto-fix" "Automatically detect and repair broken bind-mounts."
+    echo -e "  ${BLUE}Tip: Run 'sudo ccs mount cleanup --all' if the Remote GUI is cluttered.${NC}"
     echo ""
 
     echo -e "${GREEN}[4] User Access (ccs user)${NC}"
     echo "---------------------------------------------------------------"
-    printf "  %-12s %-s\n" "sudo list" "List users in the administrative 'wheel' group."
-    printf "  %-12s %-s\n" "sudo add"  "Interactive: Grant sudo access to a user."
-    printf "  %-12s %-s\n" "sudo rem"  "Interactive: Remove sudo access from a user."
+    printf "  %-16s %-s\n" "sudo list" "List users in the administrative 'wheel' group."
+    printf "  %-16s %-s\n" "sudo add"  "Interactive: Grant sudo access to a user."
+    printf "  %-16s %-s\n" "sudo rem"  "Interactive: Remove sudo access from a user."
     echo ""
 
     echo -e "${GREEN}[5] Network Diagnostics (ccs net)${NC}"
     echo "---------------------------------------------------------------"
-    printf "  %-12s %-s\n" "info"     "Check local IP and basic routing to NAS."
-    printf "  %-12s %-s\n" "latency"  "Detailed latency test to the NAS gateway."
-    printf "  %-12s %-s\n" "monitor"  "Real-time: Monitor NAS reachability and CIFS logs."
+    printf "  %-16s %-s\n" "info"     "Check local IP and basic routing to NAS."
+    printf "  %-16s %-s\n" "latency"  "Detailed latency test to the NAS gateway."
+    printf "  %-16s %-s\n" "dns"      "Check DNS resolution."
+    printf "  %-16s %-s\n" "stats"    "Network interface statistics."
+    printf "  %-16s %-s\n" "monitor"  "Real-time: Monitor NAS reachability and CIFS logs."
     echo ""
     exit 1
 }
@@ -240,9 +251,12 @@ vnc_usage() {
     echo -e "${BLUE}VNC Actions:${NC}"
     echo "  add <user> <display> [xfce|gnome]  Create a new VNC user"
     echo "  setup                              Interactive VNC setup"
-    echo "  info                               System health & VNC session diagnostics"
+    echo "  info [--cleanup]                   List sessions & clean redundant ones"
+    echo "  health                             System-wide VNC health diagnostic"
     echo "  switch <xfce|gnome> [user|--all]   Switch VNC desktop environment"
     echo "  optimize [all|me]                  Apply VNC performance tweaks"
+    echo "  boost [me|user]                    Increase VNC CPU priority (UI Boost)"
+    echo "  troubleshoot [me|user]             Diagnose UI lag/hanging issues"
     echo "  check [--cleanup]                  List sessions & clean redundant ones"
     echo "  start <name-num> <user>            Manual start of VNC session"
     echo "  remove                             Interactive VNC session removal"
@@ -251,21 +265,22 @@ vnc_usage() {
 
 perf_actions() {
     echo -e "${BLUE}Performance Actions:${NC}"
-    echo "  status                             Show aggregate threads per user"
+    echo "  status                             Show system health & user resource usage"
     echo "  stabilize                          Apply server-wide stabilization (Limits + Cleanup)"
-    echo "  top                                Show top 20 processes by thread count"
+    echo "  top                                Show top 20 processes by threads"
     echo "  noisy                              Highlight processes exceeding $THREAD_THRESHOLD threads"
-    echo "  hangs                              Identify processes in D-state (I/O wait)"
-    echo "  kill <matlab|python|servicehost|aggressive> Targeted process cleanup"
-    echo "  cleanup                            Interactively kill noisy processes"
-    echo "  usage                              Display per-user CPU and RAM usage"
-    echo "  limits                             Set global per-user resource limits (interactive)"
+    echo "  kill [pattern] [--interactive]     Cleanup processes (matlab|python|...)"
+    echo "  limits                             Configure CPU/Memory/Tasks quotas"
     echo "  conda-env <name>                   Create standard CCS Conda environment"
     echo "  conda-user-env [user|--all] [name] Create local Conda environment (default: ccs)"
     echo "  conda-optimize <user> <env>        Optimize environment threads (OpenBLAS/MKL)"
     echo "  conda-optimize-all                 Optimize ALL environments for ALL users"
     echo "  gpu                                Check GPU health and diagnostics"
     echo "  hw                                 Check hardware health via IPMI"
+    echo "  noisy                              Detect processes exceeding thread threshold"
+    echo "  hangs                              List processes in D-state"
+    echo "  kill                               Kill noisy processes (Interactive)"
+    echo "  cleanup                            Rotate logs and clean /tmp"
     echo "  persistence <on|off>               Enable/Disable GPU Persistence Mode"
     exit 1
 }
@@ -320,6 +335,16 @@ export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export LP_NUM_THREADS=8
 export QT_X11_NO_MITSHM=1
+
+# --- Session Hygiene ---
+# Disable compositing and hanging services after a short delay to ensure DE is up
+(
+  sleep 10
+  xfconf-query -c xfwm4 -p /general/use_compositing -s false
+  xfce4-screensaver --exit
+  xfce4-power-manager --exit
+) >/dev/null 2>&1 &
+
 $(echo -e "$de_cmd")
 EOF
     chown "$username:$username" "$xstartup"
@@ -366,7 +391,8 @@ vnc_add() {
 
     echo "Configuring performance optimizations..."
     local VNC_CONFIG="$USER_HOME/.vnc/config"
-    echo -e "### CCS Optimized Settings\n# (Performance flags removed due to incompatibility with Xvnc 1.15.0)" > "$VNC_CONFIG"
+    # We keep it minimal for maximum compatibility.
+    echo -e "### CCS Optimized Settings\nLazyTight=1\nAlwaysShared=0\nDisconnectClients=1\n# (Command-line quality flags removed for 1.15.0 compatibility)" > "$VNC_CONFIG"
     chown "$USERNAME:$USERNAME" "$VNC_CONFIG"
 
     echo "Configuring $TARGET_DE startup script..."
@@ -444,9 +470,6 @@ vnc_remove() {
     done
 }
 
-vnc_info() {
-    vnc_check
-}
 
 vnc_switch() {
     if [ "$#" -lt 1 ]; then vnc_usage; fi
@@ -470,7 +493,7 @@ vnc_switch() {
         echo "  -> xstartup updated to $de."
 
         if [ "$is_root" -eq 1 ]; then
-            local service_files=$(grep -l "^User=$username" /etc/systemd/system/vncserver@*.service 2>/dev/null)
+            local service_files=$(grep -l "^User=$username$" /etc/systemd/system/vncserver@*.service 2>/dev/null)
             if [ -n "$service_files" ]; then
                 local displays=$(for f in $service_files; do basename "$f" | cut -d"@" -f2 | cut -d"." -f1 | tr -d ':'; done | sort -u)
                 for d in $displays; do
@@ -504,7 +527,7 @@ vnc_switch() {
 
 vnc_optimize() {
     local target=$1
-    local OPTIMIZED_SETTINGS="### CCS Optimized Settings\n# (Performance flags removed due to incompatibility with Xvnc 1.15.0)"
+    local OPTIMIZED_SETTINGS="### CCS Optimized Settings\n# (Config flags removed for 1.15.0 compatibility)"
 
     optimize_user() {
         local user_dir=$1
@@ -515,7 +538,7 @@ vnc_optimize() {
             echo -e "$OPTIMIZED_SETTINGS" > "$user_config"
             chown $(stat -c '%U:%G' "$user_dir") "$user_config" 2>/dev/null
         else
-            sed -i '/preferredencoding/I d;/compresslevel/I d;/compressionlevel/I d;/quality/I d;/### CCS Optimized/d' "$user_config"
+            sed -i '/preferredencoding/I d;/compresslevel/I d;/compressionlevel/I d;/quality/I d;/### CCS Optimized/d;/lazytight/I d;/alwaysshared/I d;/disconnectclients/I d' "$user_config"
             echo -e "$OPTIMIZED_SETTINGS" >> "$user_config"
         fi
         echo "DONE"
@@ -523,28 +546,270 @@ vnc_optimize() {
 
     standardize_services() {
         if [ "$EUID" -ne 0 ]; then echo "Sudo required."; return; fi
+        
+        # 1. First, migrate any old-style filenames (vncserver@:1.service -> vncserver@1.service)
         local non_files=$(ls /etc/systemd/system/vncserver@:*.service 2>/dev/null)
         for old_file in $non_files; do
             local old_name=$(basename "$old_file"); local d_num=$(echo "$old_name" | cut -d":" -f2 | cut -d"." -f1)
             local new_name="vncserver@${d_num}.service"; local new_file="/etc/systemd/system/$new_name"
-            echo "  -> Migrating $old_name to $new_name..."
-            local active=$(systemctl is-active "$old_name" 2>/dev/null)
+            echo "  -> Migrating filename $old_name to $new_name..."
             systemctl stop "$old_name" >/dev/null 2>&1; systemctl disable "$old_name" >/dev/null 2>&1
-            mv "$old_file" "$new_file"; systemctl daemon-reload
-            systemctl enable "$new_name" >/dev/null 2>&1
-            [ "$active" == "active" ] && systemctl restart "$new_name"
-            echo "     DONE"
+            mv "$old_file" "$new_file"
         done
+
+        # 2. Now, rewrite all service files to match the standard CCS template
+        local services=( /etc/systemd/system/vncserver@*.service )
+        for svc_file in "${services[@]}"; do
+            [ ! -f "$svc_file" ] && continue
+            local filename=$(basename "$svc_file")
+            local d_num=$(echo "$filename" | cut -d"@" -f2 | cut -d"." -f1)
+            local user=$(grep "^User=" "$svc_file" | cut -d"=" -f2)
+            [ -z "$user" ] && continue
+            local user_home=$(getent passwd "$user" | cut -d: -f6)
+            [ -z "$user_home" ] && continue
+            
+            echo "  -> Applying CCS template to $filename (User: $user)..."
+            cat <<EOF > "$svc_file"
+[Unit]
+Description=TigerVNC server for $user on display :$d_num
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User=$user
+Group=$user
+WorkingDirectory=$user_home
+PIDFile=$user_home/.vnc/%H:$d_num.pid
+ExecStart=/usr/bin/vncserver :$d_num -geometry 1920x1080 -depth 24 -localhost no
+ExecStop=/usr/bin/vncserver -kill :$d_num
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        done
+        
+        systemctl daemon-reload
+        echo "Service standardization complete."
     }
 
     case "$target" in
-        all) standardize_services; for d in /serverdata/ccshome/*; do [ -d "$d" ] && optimize_user "$d"; done ;;
-        me|"") optimize_user "$HOME" ;;
+        all) 
+            standardize_services
+            for d in /serverdata/ccshome/*; do 
+                if [ -d "$d" ]; then
+                    optimize_user "$d"
+                    local uname=$(basename "$d")
+                    vnc_tune_de "$uname"
+                fi
+            done 
+            ;;
+        me|"") 
+            optimize_user "$HOME"
+            vnc_tune_de
+            ;;
         *) echo "Usage: ccs vnc optimize [all|me]" ;;
     esac
 }
 
-vnc_check() {
+vnc_tune_de() {
+    local target_user=${1:-$(whoami)}
+    [ "$target_user" == "me" ] && target_user=$(whoami)
+    local user_info=$(getent passwd "$target_user")
+    local user_home=$(echo "$user_info" | cut -d: -f6)
+
+    echo "Optimizing Desktop Environment for $target_user..."
+    
+    # 1. Xfce Optimization: Disable Compositing
+    if [ -f "$user_home/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml" ]; then
+        echo "  - Detected Xfce. Disabling window manager compositing..."
+        if [ "$target_user" == "$(whoami)" ]; then
+            xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null || \
+            sed -i 's/property name="use_compositing" type="bool" value="true"/property name="use_compositing" type="bool" value="false"/' "$user_home/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml"
+        else
+            sudo -u "$target_user" bash -c "xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null" || \
+            sed -i 's/property name="use_compositing" type="bool" value="true"/property name="use_compositing" type="bool" value="false"/' "$user_home/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml"
+        fi
+        echo -e "${GREEN}    Done. (Restart session to see full effect)${NC}"
+    fi
+
+    # 2. GNOME Optimization: Disable animations
+    if [ -d "$user_home/.config/dconf" ]; then
+        echo "  - Detected GNOME/dconf. Disabling animations..."
+        sudo -u "$target_user" gsettings set org.gnome.desktop.interface enable-animations false 2>/dev/null || true
+    fi
+}
+
+vnc_boost() {
+    local target_user=${1:-$(whoami)}
+    [ "$target_user" == "me" ] && target_user=$(whoami)
+    if [ "$EUID" -ne 0 ]; then echo -e "${RED}Error: Root required to boost services.${NC}"; return 1; fi
+
+    echo -e "${BLUE}=== CCS VNC UI Boost ===${NC}"
+    echo "Increasing CPU priority for $target_user's VNC sessions..."
+
+    local service_files=$(grep -l "^User=$target_user" /etc/systemd/system/vncserver@*.service 2>/dev/null)
+    if [ -z "$service_files" ]; then
+        echo "No active VNC services found for $target_user."
+        return 1
+    fi
+
+    for f in $service_files; do
+        local svc_name=$(basename "$f")
+        echo "  -> Boosting $svc_name..."
+        # Increase CPUWeight to 500 (default 100)
+        systemctl set-property "$svc_name" CPUWeight=500 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}     Success.${NC}"
+        else
+            echo -e "${RED}     Failed to set properties.${NC}"
+        fi
+    done
+    echo -e "\n${YELLOW}Tip: This gives the UI priority over background computations.${NC}"
+}
+
+vnc_troubleshoot() {
+    local target_user=${1:-$(whoami)}
+    [ "$target_user" == "me" ] && target_user=$(whoami)
+    
+    echo "==============================================================="
+    echo "  CCS VNC Troubleshooter: UI Responsiveness & Lag"
+    echo "==============================================================="
+    echo "Diagnosing user: $target_user"
+
+    # 1. Check for Throttling (Cgroups)
+    echo -e "\n[1] Checking for CPU Throttling..."
+    local user_slice=$(systemctl list-units "user-$(id -u $target_user).slice" --no-legend | awk '{print $1}')
+    if [ -n "$user_slice" ]; then
+        if [ -f "/sys/fs/cgroup/user.slice/$user_slice/cpu.stat" ]; then
+            local throttled=$(grep "nr_throttled" "/sys/fs/cgroup/user.slice/$user_slice/cpu.stat" | awk '{print $2}')
+            local throttled_time=$(grep "throttled_usec" "/sys/fs/cgroup/user.slice/$user_slice/cpu.stat" | awk '{print $2}')
+            echo "User slice $user_slice found."
+            echo "  - Total throttled count: $throttled"
+            echo "  - Total throttled time:  $((throttled_time / 1000)) ms"
+            if [ "$throttled" -gt 0 ]; then
+                echo -e "${YELLOW}⚠️  Detected CPU throttling. This user is hitting their CPU quota.${NC}"
+            else
+                echo -e "${GREEN}✅ No significant CPU throttling detected.${NC}"
+            fi
+        fi
+    else
+        echo "No active user slice found for $target_user."
+    fi
+
+    # 2. Check Window Manager (process-based, works without DISPLAY)
+    echo -e "\n[2] Checking Window Manager Status..."
+    local wm_procs=$(ps -u "$target_user" -o pid,comm --no-headers 2>/dev/null | grep -E "xfwm4|gnome-shell|kwin|marco|openbox|metacity")
+    if [ -z "$wm_procs" ]; then
+        echo -e "${RED}❌ No active Window Manager found for $target_user.${NC}"
+        echo "The UI will be unresponsive (no window borders, cannot move windows)."
+    else
+        echo -e "${GREEN}✅ Window Manager is running:${NC}"
+        echo "$wm_procs" | sed 's/^/  - /'
+    fi
+
+    # 3. Check VNC Logs for Errors
+    echo -e "\n[3] Scanning VNC Logs for Recent Errors..."
+    local user_home=$(getent passwd "$target_user" | cut -d: -f6)
+    local latest_log=$(ls -t "$user_home/.vnc/"*.log 2>/dev/null | head -n 1)
+    if [ -n "$latest_log" ]; then
+        echo "Log file: $(basename "$latest_log")"
+        local errors=$(grep -iE "error|critical|failed|refused|full" "$latest_log" | tail -n 5)
+        if [ -n "$errors" ]; then
+            echo -e "${YELLOW}Recent errors found:${NC}"
+            echo "$errors" | sed 's/^/  /'
+        else
+            echo -e "${GREEN}✅ No recent errors found in logs.${NC}"
+        fi
+    else
+        echo "No VNC logs found for $target_user."
+    fi
+
+    # 4. Check for I/O Wait & Disk Latency
+    echo -e "\n[4] Checking for Blocking Processes & Disk I/O Wait..."
+    local io_hangs=$(ps -u "$target_user" -o state,pid,comm | grep "^D" 2>/dev/null)
+    if [ -n "$io_hangs" ]; then
+        echo -e "${RED}⚠️  Blocking processes (D-State) found:${NC}"
+        echo "$io_hangs" | sed 's/^/  /'
+    else
+        echo -e "${GREEN}✅ No I/O-blocked processes found for this user.${NC}"
+    fi
+    local iowait=$(iostat -c 1 2 2>/dev/null | awk '/^avg-cpu/ {getline; print $4}' | tail -n 1)
+    if [ -n "$iowait" ]; then
+        echo "System I/O Wait: $iowait%"
+        if (( $(echo "$iowait > 5.0" | bc -l) )); then
+            echo -e "${YELLOW}⚠️  High I/O Wait detected. The disk might be slow or overloaded.${NC}"
+        fi
+    fi
+
+    # 5. Check Desktop Features
+    echo -e "\n[5] Checking Desktop Environment Features..."
+    if [ -f "$user_home/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml" ]; then
+        local comp=$(grep "use_compositing" "$user_home/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml" | grep -o "true")
+        if [ "$comp" == "true" ]; then
+            echo -e "${YELLOW}⚠️  Xfce Compositing is ENABLED. This causes major VNC lag.${NC}"
+        else
+            echo -e "${GREEN}✅ Xfce Compositing is disabled.${NC}"
+        fi
+    fi
+
+    echo -e "\n---------------------------------------------------------------"
+    echo "Recommendation:"
+    echo " - If throttled: Increase CPU quota using 'sudo ccs perf limits'."
+    echo " - If WM missing: Restart session using 'sudo systemctl restart vncserver@<display>'."
+    echo " - If lag persists: Run 'ccs vnc optimize me' to refresh VNC settings."
+    echo "==============================================================="
+}
+
+vnc_health() {
+    echo "==============================================================="
+    echo "  CCS VNC Health & Responsiveness Diagnostic"
+    echo "==============================================================="
+
+    # 1. System Load & Throttling Summary
+    echo -e "\n[1] Resource Throttling Summary"
+    echo "---------------------------------------------------------------"
+    local throttled_found=0
+    for slice in $(systemctl list-units "user-*.slice" --no-legend | awk '{print $1}'); do
+        if [ -f "/sys/fs/cgroup/user.slice/$slice/cpu.stat" ]; then
+            local throttled=$(grep "nr_throttled" "/sys/fs/cgroup/user.slice/$slice/cpu.stat" | awk '{print $2}')
+            if [ "$throttled" -gt 0 ]; then
+                local user_id=$(echo $slice | cut -d'-' -f2 | cut -d'.' -f1)
+                local username=$(id -nu $user_id 2>/dev/null || echo "UID:$user_id")
+                echo -e "${RED}⚠️  User $username is being THROTTLED ($throttled times)${NC}"
+                throttled_found=1
+            fi
+        fi
+    done
+    [ "$throttled_found" -eq 0 ] && echo -e "${GREEN}✅ No users currently hitting CPU quotas.${NC}"
+
+    # 2. Network Latency (Internal Gateway)
+    echo -e "\n[2] Internal Network Latency (Gateway)"
+    echo "---------------------------------------------------------------"
+    local gateway=$(ip route | grep default | awk '{print $3}' | head -n 1)
+    if [ -n "$gateway" ]; then
+        ping -c 3 -W 1 "$gateway" | tail -n 1
+    else
+        echo "No gateway found."
+    fi
+
+    # 3. Port & Socket Status
+    echo -e "\n[3] VNC Listening Ports & X11 Sockets"
+    echo "---------------------------------------------------------------"
+    if command -v ss >/dev/null 2>&1; then
+        ss -tlnp | grep Xvnc | awk '{print "Port: " $4}'
+    else
+        netstat -tlnp | grep Xvnc | awk '{print "Port: " $4}'
+    fi
+    local socket_count=$(ls /tmp/.X11-unix/ | grep "^X" | wc -l)
+    echo "Active X11 Sockets: $socket_count"
+
+    echo -e "\n${BLUE}Recommendation:${NC}"
+    echo " - If throttling is high: Increase 'sudo ccs perf limits'."
+    echo " - If ports are missing: Run 'ccs vnc check' to find inactive services."
+    echo "==============================================================="
+}
+
+vnc_info() {
     local CLEANUP=0
     if [[ "$*" == *"--cleanup"* ]]; then CLEANUP=1; fi
     if [ "$EUID" -ne 0 ]; then echo "Root required for full scan."; fi
@@ -733,12 +998,108 @@ perf_status() {
         echo -e "${RED}⚠️  EMPTY BIND-MOUNTS DETECTED (Host disconnected?):${NC}"
         echo -e "$empty_mounts"
     fi
-
-    if [ -z "$stacked_mounts" ] && [ -z "$empty_mounts" ]; then
-        echo -e "${GREEN}✅ No stacked or empty bind-mounts detected.${NC}"
-    else
-        echo -e "\n${YELLOW}Suggestion: Run 'sudo ccs mount cleanup --all' to fix these issues.${NC}"
+    
+    # 6. User Resource Usage (Consolidated from perf_usage)
+    echo -e "\n[6] Aggregate Resource Usage per User"
+    echo "---------------------------------------------------------------"
+    printf "%-15s %-15s %-15s\n" "USER" "CPU (%)" "RAM (%)"
+    local USERS=$(ps -eo user | sort -u | grep -v 'USER')
+    for u in $USERS; do
+        local CPU_USAGE=$(ps -u "$u" -o %cpu --no-headers | awk -v cores="$(nproc)" '{s+=$1} END {printf "%.2f", s/cores}')
+        local MEM_USAGE=$(ps -u "$u" -o %mem --no-headers | awk '{s+=$1} END {printf "%.2f", s}')
+        if [ -n "$CPU_USAGE" ] && [ -n "$MEM_USAGE" ] && (( $(echo "$CPU_USAGE > 0.1 || $MEM_USAGE > 0.1" | bc -l) )); then
+            printf "%-15s %-15.2f %-15.2f\n" "$u" "$CPU_USAGE" "$MEM_USAGE"
+        fi
+    done
+    
+    # 7. Recommendations & Corrective Actions
+    echo -e "\n[7] Recommended Corrective Actions"
+    echo "---------------------------------------------------------------"
+    local issues=0
+    
+    # Check D-state
+    local HANGS=$(ps -eo state | grep "^D" | wc -l)
+    if [ "$HANGS" -gt 0 ]; then
+        echo -e "${YELLOW}  [!] I/O Hangs detected (${HANGS} processes).${NC}"
+        echo -e "      👉 Run: ${GREEN}sudo ccs perf stabilize${NC} to clean up hangs."
+        issues=$((issues + 1))
     fi
+
+    # Check Throttling
+    local t_count=0
+    for slice in $(systemctl list-units "user-*.slice" --no-legend | awk '{print $1}'); do
+        if [ -f "/sys/fs/cgroup/user.slice/$slice/cpu.stat" ]; then
+            local throttled=$(grep "nr_throttled" "/sys/fs/cgroup/user.slice/$slice/cpu.stat" | awk '{print $2}')
+            [ "$throttled" -gt 100 ] && t_count=$((t_count + 1))
+        fi
+    done
+    if [ "$t_count" -gt 0 ]; then
+        echo -e "${YELLOW}  [!] CPU Throttling detected for ${t_count} user(s).${NC}"
+        echo -e "      👉 Run: ${GREEN}sudo ccs perf limits${NC} to increase CPU quotas."
+        issues=$((issues + 1))
+    fi
+
+    # Check Mounts
+    if [ -n "$stacked_mounts" ]; then
+        echo -e "${YELLOW}  [!] Stacked bind-mounts detected.${NC}"
+        echo -e "      👉 Run: ${GREEN}sudo ccs mount cleanup --all${NC}"
+        issues=$((issues + 1))
+    fi
+    if [ -n "$empty_mounts" ]; then
+        echo -e "${YELLOW}  [!] Empty bind-mounts detected (NAS disconnected).${NC}"
+        echo -e "      👉 Run: ${GREEN}sudo ccs mount restore${NC} to reconnect."
+        issues=$((issues + 1))
+    fi
+
+    # Check Disk
+    local du=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+    if [ "$du" -gt 85 ]; then
+        echo -e "${YELLOW}  [!] Disk / is nearly full ($du%).${NC}"
+        echo -e "      👉 Action: Run ${GREEN}sudo ccs perf cleanup${NC} or check large files."
+        issues=$((issues + 1))
+    fi
+
+    if [ "$issues" -eq 0 ]; then
+        echo -e "${GREEN}  ✅ No major issues detected. System is healthy.${NC}"
+    fi
+
+    # 8. Reboot History (Last 7 Days)
+    echo -e "\n[8] Reboot History (Last 7 Days)"
+    echo "---------------------------------------------------------------"
+    local now=$(date +%s)
+    local week_ago=$((now - 7 * 24 * 3600))
+    local boots_7d=0
+    while read -r line; do
+        # Extract date from journalctl --list-boots format: "... Day YYYY-MM-DD HH:MM:SS ..."
+        # Note: format varies by journal version. Let's try to extract the timestamp part.
+        local boot_time=$(echo "$line" | grep -oE "[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}" | head -1)
+        if [ -n "$boot_time" ]; then
+            local boot_ts=$(date -d "$boot_time" +%s 2>/dev/null)
+            if [ -n "$boot_ts" ] && [ "$boot_ts" -ge "$week_ago" ]; then
+                boots_7d=$((boots_7d + 1))
+            fi
+        fi
+    done < <(journalctl --list-boots 2>/dev/null)
+
+    echo "Total Reboots (7d): $boots_7d"
+    
+    if [ "$boots_7d" -gt 2 ]; then
+        echo -e "${YELLOW}⚠️  High reboot frequency detected. Check hardware/power stability.${NC}"
+    fi
+
+    # Check last boot termination
+    local last_boot_end=$(journalctl -b -1 -n 5 --no-pager 2>/dev/null)
+    if [ -n "$last_boot_end" ]; then
+        local is_clean=$(echo "$last_boot_end" | grep -Ei "reboot|shutdown|poweroff|stopping|reached target|systemd-logind: System is")
+        if [ -n "$is_clean" ]; then
+            echo -e "Last Reboot Status: ${GREEN}Clean Shutdown${NC}"
+        else
+            echo -e "Last Reboot Status: ${RED}Unexpected (Crash/Power Loss)${NC}"
+            echo "  -> Last log snippet:"
+            echo "$last_boot_end" | sed 's/^/     /'
+        fi
+    fi
+
     echo -e "\nDone."
 }
 
@@ -776,50 +1137,47 @@ perf_hangs() {
 
 perf_kill() {
     local target=$1
+    local interactive=0
+    [[ "$*" == *"--interactive"* || "$*" == *"-i"* ]] && interactive=1
+
+    if [ "$interactive" -eq 1 ]; then
+        echo -e "\n[Interactive Cleanup Mode]"
+        local noisy_procs=$(ps -eo user:20,pid,nlwp,args --sort=-nlwp | awk -v thresh=$THREAD_THRESHOLD -v me=$$ -v u=$(whoami) '($1 == u || u == "root") && $3 > thresh && $2 != me && $1 != "root" {print $2":"$3":"$4}')
+        if [ -z "$noisy_procs" ]; then echo "No noisy processes (> $THREAD_THRESHOLD threads) found."; return; fi
+        for proc in $noisy_procs; do
+            local pid=$(echo $proc | cut -d: -f1); local nlwp=$(echo $proc | cut -d: -f2); local cmd=$(echo $proc | cut -d: -f3)
+            echo -n "Kill process $pid ($cmd) with $nlwp threads? [y/N]: "; read confirm
+            [[ "$confirm" == [yY] ]] && kill -9 $pid && echo "Killed $pid."
+        done
+        return
+    fi
+
     local search_pattern
     case "$target" in
         matlab) search_pattern="MATLAB" ;;
         python) search_pattern="python|spyder_kernels" ;;
         servicehost) search_pattern="MathWorksServiceHost" ;;
         aggressive) search_pattern="MATLAB|python|spyder_kernels|MathWorksServiceHost" ;;
-        *) echo "Usage: ccs perf kill <matlab|python|servicehost|aggressive>"; return ;;
+        *) 
+            if [ -n "$target" ]; then search_pattern="$target"; else
+                echo "Usage: ccs perf kill <matlab|python|servicehost|aggressive|PATTERN> [--interactive]"; return 
+            fi
+            ;;
     esac
     
     local myuser=$(whoami); local procs
     if [ "$myuser" == "root" ]; then
-        procs=$(ps -eo user:20,pid,nlwp,args | grep -E "$search_pattern" | grep -v grep | grep -v "ccs")
+        procs=$(ps -eo user:20,pid,nlwp,args | grep -Ei "$search_pattern" | grep -v grep | grep -v "ccs")
     else
-        procs=$(ps -u "$myuser" -o user:20,pid,nlwp,args | grep -E "$search_pattern" | grep -v grep | grep -v "ccs")
+        procs=$(ps -u "$myuser" -o user:20,pid,nlwp,args | grep -Ei "$search_pattern" | grep -v grep | grep -v "ccs")
     fi
 
-    if [ -z "$procs" ]; then echo "No $target instances found."; return; fi
+    if [ -z "$procs" ]; then echo "No '$target' instances found."; return; fi
     echo "$procs" | awk '{printf "%-20s %-8s %-6s %s\n", $1, $2, $3, $4}'
     echo -n "Kill ALL listed $target processes? [y/N]: "; read confirm
     if [[ "$confirm" == [yY] ]]; then echo "$procs" | awk '{print $2}' | xargs -r kill -9; echo "Cleanup complete."; fi
 }
 
-perf_cleanup() {
-    echo -e "\n[Interactive Cleanup Mode]"
-    local noisy_procs=$(ps -eo user:20,pid,nlwp,args --sort=-nlwp | awk -v thresh=$THREAD_THRESHOLD -v me=$$ -v u=$(whoami) '($1 == u || u == "root") && $3 > thresh && $2 != me && $1 != "root" {print $2":"$3":"$4}')
-    if [ -z "$noisy_procs" ]; then echo "No noisy processes found."; return; fi
-    for proc in $noisy_procs; do
-        local pid=$(echo $proc | cut -d: -f1); local nlwp=$(echo $proc | cut -d: -f2); local cmd=$(echo $proc | cut -d: -f3)
-        echo -n "Kill process $pid ($cmd) with $nlwp threads? [y/N]: "; read confirm
-        [[ "$confirm" == [yY] ]] && kill -9 $pid && echo "Killed $pid."
-    done
-}
-
-perf_usage() {
-    local TOTAL_CORES=$(nproc)
-    echo "User      Total CPU (%)   Total RAM (%)"
-    echo "-------------------------------------"
-    local USERS=$(ps -eo user | sort -u | grep -v 'USER')
-    for user in $USERS; do
-        local CPU_USAGE=$(ps -u "$user" -o %cpu --no-headers | awk -v cores="$TOTAL_CORES" '{s+=$1} END {printf "%.2f", s/cores}')
-        local MEM_USAGE=$(ps -u "$user" -o %mem --no-headers | awk '{s+=$1} END {printf "%.2f", s}')
-        if [ -n "$CPU_USAGE" ] && [ -n "$MEM_USAGE" ]; then printf "%-10s %-12.2f %-12.2f\n" "$user" "$CPU_USAGE" "$MEM_USAGE"; fi
-    done
-}
 
 perf_stabilize() {
     echo -e "${BLUE}=== CCS Server Stabilization ===${NC}"
@@ -828,12 +1186,31 @@ perf_stabilize() {
     echo -e "\n[1/3] Updating Resource Limits..."
     perf_limits "$DEFAULT_MEMORY_MAX" "10" "$DEFAULT_TASKS_MAX"
 
-    echo -e "\n[2/3] Cleaning up runaway Matlab services..."
-    pkill -9 -f MathWorksServiceHost && echo -e "${GREEN}Terminated runaway service hosts.${NC}" || echo "No active service hosts found."
+    echo -e "\n[2/3] Cleaning up runaway processes..."
+    pkill -9 -f MathWorksServiceHost && echo -e "  - Terminated runaway Matlab service hosts."
+    pkill -9 -f xfce4-screensaver && echo -e "  - Terminated hanging screensavers."
+    pkill -9 -f xfce4-power-manager && echo -e "  - Terminated hanging power managers."
+    pkill -9 -f nvidia-settings && echo -e "  - Terminated hanging nvidia-settings."
 
     echo -e "\n[3/3] Verifying System State..."
     perf_status
     echo -e "\n${GREEN}✅ Server stabilization complete.${NC}"
+}
+
+perf_cleanup() {
+    echo -e "${BLUE}=== CCS System Cleanup ===${NC}"
+    if [ "$EUID" -ne 0 ]; then echo -e "${RED}Error: Root required.${NC}"; return 1; fi
+    
+    echo "Cleaning up journal logs older than 7 days..."
+    journalctl --vacuum-time=7d
+    
+    echo "Cleaning up temporary files in /tmp..."
+    find /tmp -type f -atime +7 -delete 2>/dev/null
+    
+    echo "Cleaning up stale VNC logs..."
+    find /serverdata/ccshome/*/ .vnc/ -name "*.log" -mtime +30 -delete 2>/dev/null
+    
+    echo -e "${GREEN}Cleanup complete.${NC}"
 }
 
 perf_limits() {
@@ -870,47 +1247,43 @@ perf_limits() {
     local CPU_QUOTA_VALUE=$(echo "scale=0; ($CPU_QUOTA_PERCENTAGE * $TOTAL_CORES)" | bc)
     local FINAL_CPU_QUOTA="${CPU_QUOTA_VALUE}%"
     
-    # Calculate AllowedCPUs range (e.g. 0-51 for 20% of 256)
-    local CORES_COUNT=$(echo "($CPU_QUOTA_PERCENTAGE * $TOTAL_CORES / 100) - 1" | bc)
-    [ "$CORES_COUNT" -lt 0 ] && CORES_COUNT=0
-    local ALLOWED_CPUS="0-$CORES_COUNT"
-
     local USER_DROPIN="/etc/systemd/system/user-.slice.d"
     local VNC_DROPIN="/etc/systemd/system/vncserver@.service.d"
     local VNC_SLICE_DROPIN="/etc/systemd/system/system-vncserver.slice.d"
 
-    echo "Configuring hard CPU fencing (AllowedCPUs=$ALLOWED_CPUS) and Quotas..."
+    echo "Configuring CPU Quotas ($FINAL_CPU_QUOTA)..."
     mkdir -p "$USER_DROPIN" "$VNC_DROPIN" "$VNC_SLICE_DROPIN"
     
-    local CONFIG_CONTENT="[Slice]\nCPUAccounting=yes\nCPUQuota=$FINAL_CPU_QUOTA\nAllowedCPUs=$ALLOWED_CPUS\nMemoryAccounting=yes\nMemoryMax=$MEMORY_MAX\nTasksAccounting=yes\nTasksMax=$TASKS_MAX"
-    local SVC_CONFIG_CONTENT="[Service]\nCPUAccounting=yes\nCPUQuota=$FINAL_CPU_QUOTA\nAllowedCPUs=$ALLOWED_CPUS\nMemoryAccounting=yes\nMemoryMax=$MEMORY_MAX\nTasksAccounting=yes\nTasksMax=$TASKS_MAX"
+    local CONFIG_CONTENT="[Slice]\nCPUAccounting=yes\nCPUQuota=$FINAL_CPU_QUOTA\nMemoryAccounting=yes\nMemoryMax=$MEMORY_MAX\nTasksAccounting=yes\nTasksMax=$TASKS_MAX"
+    local SVC_CONFIG_CONTENT="[Service]\nCPUAccounting=yes\nCPUQuota=$FINAL_CPU_QUOTA\nMemoryAccounting=yes\nMemoryMax=$MEMORY_MAX\nTasksAccounting=yes\nTasksMax=$TASKS_MAX"
 
     echo -e "$CONFIG_CONTENT" > "$USER_DROPIN/10-resources.conf"
     echo -e "$CONFIG_CONTENT" > "$VNC_SLICE_DROPIN/10-resources.conf"
     echo -e "$SVC_CONFIG_CONTENT" > "$VNC_DROPIN/10-resources.conf"
 
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Resource fencing successfully configured.${NC}"
-        echo "AllowedCPUs: $ALLOWED_CPUS"
+        echo -e "${GREEN}✅ Resource limits successfully configured.${NC}"
         echo "CPU Quota:   $FINAL_CPU_QUOTA (~$CPU_QUOTA_VALUE cores)"
         echo "MemoryMax:   $MEMORY_MAX"
+        echo "TasksMax:    $TASKS_MAX"
         
         systemctl daemon-reload 2>/dev/null || echo "Warning: daemon-reload timed out, but properties will be applied to active units."
         
         echo "Applying limits to active user and VNC units..."
         # 1. Active User Slices
         for slice in $(systemctl list-units "user-*.slice" --no-legend | awk '{print $1}'); do
-            systemctl set-property "$slice" AllowedCPUs=$ALLOWED_CPUS CPUQuota=$FINAL_CPU_QUOTA TasksMax=$TASKS_MAX MemoryMax=$MEMORY_MAX 2>/dev/null
+            systemctl set-property "$slice" CPUQuota=$FINAL_CPU_QUOTA TasksMax=$TASKS_MAX MemoryMax=$MEMORY_MAX 2>/dev/null
         done
         # 2. Active VNC Services
         for svc in $(systemctl list-units "vncserver@*.service" --no-legend | awk '{print $1}'); do
-            systemctl set-property "$svc" AllowedCPUs=$ALLOWED_CPUS CPUQuota=$FINAL_CPU_QUOTA TasksMax=$TASKS_MAX MemoryMax=$MEMORY_MAX 2>/dev/null
+            systemctl set-property "$svc" CPUQuota=$FINAL_CPU_QUOTA TasksMax=$TASKS_MAX MemoryMax=$MEMORY_MAX 2>/dev/null
         done
     else
         echo -e "${RED}Failed to write configuration files.${NC}"
         return 1
     fi
 }
+
 
 perf_conda_env() {
     if [ -z "$1" ]; then
@@ -1719,10 +2092,12 @@ case "$CATEGORY" in
     vnc)
         case "$ACTION" in
             add|setup) vnc_add "$@" ;;
-            info) vnc_info "$@" ;;
+            info|check) vnc_info "$@" ;;
+            health) vnc_health "$@" ;;
             switch) vnc_switch "$@" ;;
             optimize) vnc_optimize "$@" ;;
-            check) vnc_check "$@" ;;
+            boost) vnc_boost "$@" ;;
+            troubleshoot) vnc_troubleshoot "$@" ;;
             start) vnc_start "$@" ;;
             remove) vnc_remove "$@" ;;
             help|"") vnc_usage ;;
@@ -1731,14 +2106,13 @@ case "$CATEGORY" in
         ;;
     perf)
         case "$ACTION" in
-            status) perf_status "$@" ;;
+            status|usage) perf_status "$@" ;;
             stabilize) perf_stabilize "$@" ;;
             top) perf_top "$@" ;;
             noisy) perf_noisy "$@" ;;
             hangs) perf_hangs "$@" ;;
             kill) perf_kill "$@" ;;
             cleanup) perf_cleanup "$@" ;;
-            usage) perf_usage "$@" ;;
             limits) perf_limits "$@" ;;
             conda-env) perf_conda_env "$@" ;;
             conda-user-env) perf_conda_user_env "$@" ;;
